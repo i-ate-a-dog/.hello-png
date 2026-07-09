@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hello Converter</title>
+  <style>
+    :root{
+      --bg1:#dff2ff;
+      --bg2:#ffffff;
+      --card:#ffffffcc;
+      --border:#111;
+      --text:#000;
+      --btn:#fff;
+    }
+    body{
+      margin:0;
+      min-height:100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background: linear-gradient(180deg, var(--bg1), var(--bg2));
+      font-family: Arial, sans-serif;
+      color:var(--text);
+    }
+    .wrap{
+      width:min(980px, 94vw);
+      text-align:center;
+    }
+    .title{
+      display:flex;
+      gap:14px;
+      justify-content:center;
+      align-items:center;
+      margin-bottom:18px;
+      flex-wrap:wrap;
+    }
+    .title span{
+      font-size:34px;
+      font-weight:700;
+      color:#000;
+    }
+    .card-row{
+      display:flex;
+      gap:18px;
+      justify-content:center;
+      flex-wrap:wrap;
+      margin-top:10px;
+    }
+    .card{
+      width:280px;
+      min-height:120px;
+      background:rgba(255,255,255,0.88);
+      border:2px solid #000;
+      border-radius:18px;
+      box-shadow:0 8px 24px rgba(0,0,0,.12);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      position:relative;
+      overflow:hidden;
+    }
+    .card label{
+      cursor:pointer;
+      user-select:none;
+      font-size:24px;
+      font-weight:700;
+      color:#000;
+      padding:18px;
+      display:block;
+      width:100%;
+    }
+    #fileInput{
+      display:none;
+    }
+    #status{
+      margin-top:14px;
+      min-height:24px;
+      font-size:18px;
+      color:#000;
+      font-weight:700;
+    }
+    canvas{
+      margin-top:18px;
+      border:2px solid #000;
+      background:#fff;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      width:auto;
+      height:auto;
+      max-width:none;
+      max-height:70vh;
+      display:block;
+      margin-left:auto;
+      margin-right:auto;
+    }
+    textarea{
+      width:100%;
+      height:230px;
+      margin-top:16px;
+      background:#fff;
+      color:#000;
+      border:2px solid #000;
+      border-radius:12px;
+      padding:12px;
+      box-sizing:border-box;
+      resize:vertical;
+      font-family:monospace;
+      font-size:14px;
+    }
+    .btn{
+      margin-top:14px;
+      padding:12px 18px;
+      border:2px solid #000;
+      border-radius:12px;
+      background:#fff;
+      color:#000;
+      cursor:pointer;
+      font-size:16px;
+      font-weight:700;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      line-height:1;
+    }
+    .btn-row{
+      display:flex;
+      justify-content:center;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-top:14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="title">
+      <span>Hello Converter</span>
+      <span>Hello Converter</span>
+    </div>
+
+    <div class="card-row">
+      <div class="card">
+        <label for="fileInput">HELLO to PNG</label>
+      </div>
+      <div class="card">
+        <label for="fileInput">PNG to HELLO</label>
+      </div>
+    </div>
+
+    <input id="fileInput" type="file" accept=".hello,.txt,.png" />
+    <div id="status"></div>
+
+    <canvas id="preview"></canvas>
+    <textarea id="output" placeholder="Output..." readonly></textarea>
+
+    <div class="btn-row">
+      <button class="btn" id="downloadBtn">Download</button>
+      <button class="btn" id="copyBtn" type="button">Copy</button>
+    </div>
+  </div>
+
+  <script>
+    const fileInput = document.getElementById("fileInput");
+    const statusEl = document.getElementById("status");
+    const canvas = document.getElementById("preview");
+    const ctx = canvas.getContext("2d");
+    const outputEl = document.getElementById("output");
+    const downloadBtn = document.getElementById("downloadBtn");
+    const copyBtn = document.getElementById("copyBtn");
+
+    let currentType = null;
+    let currentFileName = "output";
+
+    function setStatus(msg, color = "#000") {
+      statusEl.textContent = msg;
+      statusEl.style.color = color;
+    }
+
+    function isValidHexColor(s) {
+      return /^[0-9A-Fa-f]{6}$/.test(s);
+    }
+
+    function rgbToHex(r, g, b) {
+      return [r, g, b].map(v => v.toString(16).padStart(2, "0")).join("").toUpperCase();
+    }
+
+    function parseHello(text) {
+      const lines = text.trim().split(/\r?\n/).filter(l => l.trim() !== "");
+      if (!lines.length) return null;
+
+      const first = lines[0].trim();
+      const m = first.match(/\((\d+)\s*[×x]\s*(\d+)\)/);
+      if (!m) return null;
+
+      const h = parseInt(m[1], 10);
+      const w = parseInt(m[2], 10);
+
+      const pixels = [];
+      for (let i = 1; i < lines.length; i++) {
+        const rowText = lines[i].replace(/-$/, "").trim();
+        if (!rowText) continue;
+        const row = rowText.split("/").map(x => x.trim()).filter(Boolean);
+        pixels.push(row);
+      }
+
+      return { h, w, pixels };
+    }
+
+    function drawHello(data) {
+      const { h, w, pixels } = data;
+
+      canvas.width = w;
+      canvas.height = h;
+
+      const imageData = ctx.createImageData(w, h);
+
+      for (let y = 0; y < h; y++) {
+        const row = pixels[y] || [];
+        for (let x = 0; x < w; x++) {
+          const color = (row[x] || "FFFFFF").replace("#", "").toUpperCase();
+          const idx = (y * w + x) * 4;
+
+          let r = 255, g = 255, b = 255;
+          if (isValidHexColor(color)) {
+            r = parseInt(color.slice(0, 2), 16);
+            g = parseInt(color.slice(2, 4), 16);
+            b = parseInt(color.slice(4, 6), 16);
+          }
+
+          imageData.data[idx] = r;
+          imageData.data[idx + 1] = g;
+          imageData.data[idx + 2] = b;
+          imageData.data[idx + 3] = 255;
+        }
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+
+      canvas.style.width = Math.min(w * 20, 900) + "px";
+      canvas.style.height = "auto";
+
+      currentType = "png";
+      currentFileName = "output.png";
+      outputEl.value = "";
+      setStatus(`Loaded HELLO: ${w}×${h}`);
+    }
+
+    async function pngToHello(file) {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+
+      return new Promise((resolve, reject) => {
+        img.onload = () => {
+          const w = img.width;
+          const h = img.height;
+
+          canvas.width = w;
+          canvas.height = h;
+          canvas.style.width = Math.min(w * 20, 900) + "px";
+          canvas.style.height = "auto";
+
+          ctx.imageSmoothingEnabled = false;
+          ctx.drawImage(img, 0, 0);
+
+          const data = ctx.getImageData(0, 0, w, h).data;
+          let out = `(${h}×${w})\n`;
+
+          for (let y = 0; y < h; y++) {
+            let row = "";
+            for (let x = 0; x < w; x++) {
+              const i = (y * w + x) * 4;
+              const r = data[i];
+              const g = data[i + 1];
+              const b = data[i + 2];
+              const a = data[i + 3];
+              const hex = a === 0 ? "FFFFFF" : rgbToHex(r, g, b);
+              row += hex + "/";
+            }
+            row += "-";
+            out += row + "\n";
+          }
+
+          URL.revokeObjectURL(url);
+          resolve({ text: out, w, h });
+        };
+
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          reject(new Error("Image load failed"));
+        };
+
+        img.src = url;
+      });
+    }
+
+    fileInput.addEventListener("change", async () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+
+      const ext = file.name.split(".").pop().toLowerCase();
+
+      if (ext === "png") {
+        try {
+          const result = await pngToHello(file);
+          outputEl.value = result.text;
+          currentType = "hello";
+          currentFileName = file.name.replace(/\.png$/i, "") + ".hello";
+          setStatus(`PNG converted to HELLO: ${result.w}×${result.h}`);
+        } catch (e) {
+          setStatus("file not supported", "red");
+        }
+        return;
+      }
+
+      if (ext !== "hello" && ext !== "txt") {
+        setStatus("file not supported", "red");
+        return;
+      }
+
+      const text = await file.text();
+      const parsed = parseHello(text);
+
+      if (!parsed) {
+        setStatus("invalid hello format", "red");
+        return;
+      }
+
+      drawHello(parsed);
+    });
+
+    downloadBtn.addEventListener("click", () => {
+      if (currentType === "hello") {
+        const blob = new Blob([outputEl.value], { type: "text/plain" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = currentFileName;
+        a.click();
+        return;
+      }
+
+      if (currentType === "png") {
+        const a = document.createElement("a");
+        a.href = canvas.toDataURL("image/png");
+        a.download = currentFileName;
+        a.click();
+      }
+    });
+
+    copyBtn.addEventListener("click", async () => {
+      const text = outputEl.value ?? "";
+      if (!text.trim()) {
+        setStatus("Nothing to copy", "red");
+        return;
+      }
+
+      try {
+        await navigator.clipboard.writeText(text);
+        setStatus("Copied to clipboard");
+        return;
+      } catch (e) {
+        // fallback below
+      }
+
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.setAttribute("readonly", "true");
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        ta.style.top = "-9999px";
+        document.body.appendChild(ta);
+
+        ta.focus();
+        ta.select();
+        ta.setSelectionRange(0, ta.value.length);
+
+        const ok = document.execCommand("copy");
+        document.body.removeChild(ta);
+
+        setStatus(ok ? "Copied to clipboard" : "Copy failed", ok ? "#000" : "red");
+      } catch (err) {
+        setStatus("Copy failed", "red");
+      }
+    });
+  </script>
+</body>
+</html>
